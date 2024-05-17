@@ -15,8 +15,8 @@ const upload = multer({ storage });
 
 require('dotenv').config();
 
-const connection = new Connection('https://solana-devnet.g.alchemy.com/v2/oFWFCLUFOPgvg7Ac--JNtWABQ1jvjdUj');
-const PARENT_WALLET_ADDRESS = '6toiurfNa7x1d69qGvbYaKzbsyTfuq99vcf4bocYnreW'
+const connection = new Connection(process.env.CONNECTION_URL);
+const PARENT_WALLET_ADDRESS = process.env.PARENT_WALLET_ADDRESS
 const JWT_SECRET =  process.env.JWT_SECRET
 
 
