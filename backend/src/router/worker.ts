@@ -13,7 +13,7 @@ require('dotenv').config();
 
 const workerRouter = Router();
 const prismaClient = new PrismaClient();
-const connection = new Connection('https://solana-devnet.g.alchemy.com/v2/oFWFCLUFOPgvg7Ac--JNtWABQ1jvjdUj');
+const connection = new Connection(process.env.CONNECTION_URL);
 
 
 export const TOTAL_DECIMALS = 1000_000_0000;
