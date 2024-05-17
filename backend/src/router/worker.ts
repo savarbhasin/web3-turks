@@ -6,8 +6,8 @@ import { PrismaClient } from "@prisma/client";
 import { getNextTask } from "../db";
 import { submissionInput } from "./types";
 import nacl from "tweetnacl";
-import { Connection, Keypair, PublicKey, SystemProgram, Transaction, sendAndConfirmRawTransaction } from "@solana/web3.js";
-import { decode } from "punycode";
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
+import { decode } from "bs58";
 require('dotenv').config();
 
 
@@ -16,7 +16,7 @@ const prismaClient = new PrismaClient();
 const connection = new Connection('https://solana-devnet.g.alchemy.com/v2/oFWFCLUFOPgvg7Ac--JNtWABQ1jvjdUj');
 
 
-export const TOTAL_DECIMALS = 1000_000_000;
+export const TOTAL_DECIMALS = 1000_000_0000;
 
 const MAX_SUBMISSIONS = 100;
 
@@ -42,16 +42,18 @@ workerRouter.post('/signup', async(req, res) => {
         }
 
         // if exists then login else create
-        const worker = await prismaClient.user.upsert({
+        const worker = await prismaClient.worker.upsert({
             where:{
                 address:publicKey
             },
             create:{
-                address:publicKey
+                address:publicKey,
+                pending_amount:0,
+                locked_amount:0
             },
             update:{}
         })  
-        const token = jwt.sign({userId: worker.id},process.env.JWT_SECRET!);
+        const token = jwt.sign({userId: worker.id},process.env.JWT_SECRET_WORKER!);
         res.cookie('token',token ,{httpOnly:true});
         return res.status(200).json({sucess:true,token});
     } catch(e:any){
@@ -131,66 +133,71 @@ workerRouter.post('/submission',isWorker,async(req:Request,res:Response)=>{
 
 workerRouter.post('/payout',isWorker,async(req,res)=>{
     const userId = (req as Request & { userId: number }).userId;
-    const workerData = await prismaClient.worker.findFirst({
-        where:{
-            id:userId
-        }
-    })
-    if(!workerData){
-        return res.status(401).json({message:'Invalid Worker'})
-    }
-
-    const transaction = new Transaction().add(
-        SystemProgram.transfer({
-            fromPubkey: new PublicKey(process.env.SOLANA_ADDRESS!),
-            toPubkey: new PublicKey(workerData.address),
-            lamports:1000_000_000* workerData.pending_amount/TOTAL_DECIMALS
-        })
-    )
-
-
-
-    const txnId = transaction.signature?.toString();
-
-    const keypair = Keypair.fromSecretKey(new Uint8Array(JSON.parse(process.env.SOLANA_SECRET!)));
-
-    //@ts-ignore
-    const signature = await sendAndConfirmRawTransaction(connection,transaction,[keypair]);
-
-
-
-    // async add lock here
-
-
-    await prismaClient.$transaction(async tx => {
-        await tx.worker.update({
+    try{
+        const workerData = await prismaClient.worker.findFirst({
             where:{
                 id:userId
-            },
-            data:{
-                pending_amount:{
-                    decrement: workerData.pending_amount
+            }
+        })
+        if(!workerData){
+            return res.status(401).json({message:'Invalid Worker'})
+        }
+
+        const transaction = new Transaction().add(
+            SystemProgram.transfer({
+                fromPubkey: new PublicKey(process.env.SOLANA_ADDRESS!),
+                toPubkey: new PublicKey(workerData.address),
+                lamports: 1000_000_000*workerData.pending_amount/TOTAL_DECIMALS
+            })
+        );
+
+
+
+        const txnId = transaction.signature;
+
+        const privateKey = process.env.SOLANA_KEY!;
+
+        const keypair = Keypair.fromSecretKey(decode(privateKey));
+
+        const signature = await sendAndConfirmTransaction(connection,transaction,[keypair]);
+
+        if(!signature){
+            return res.status(401).json({succes:false,message:'Failed to process payout'})
+        }
+
+        // async add lock here
+        await prismaClient.$transaction(async tx => {
+            await tx.worker.update({
+                where:{
+                    id:userId
                 },
-                locked_amount:{
-                    increment: workerData.pending_amount
+                data:{
+                    pending_amount:{
+                        decrement: workerData.pending_amount
+                    },
+                    locked_amount:{
+                        increment: workerData.pending_amount
+                    }
                 }
-            }
+            })
+            await tx.payouts.create({
+                data:{
+                    workerId:userId,
+                    amount:workerData.pending_amount,
+                    payoutDate:new Date(),
+                    status:"Processing",
+                    signature:signature!
+                }
+            })
         })
-        await tx.payouts.create({
-            data:{
-                workerId:userId,
-                amount:workerData.pending_amount,
-                payoutDate:new Date(),
-                status:"Processing",
-                signature:txnId!
-            }
+        res.json({
+            message:"Processing Payout",
+            success:true,
+            amount:workerData.pending_amount
         })
-    })
-    res.json({
-        message:"Processing Payout",
-        success:true,
-        amount:workerData.pending_amount
-    })
+    } catch(e:any){
+        return res.status(401).json({message:e.message, success:false})
+    }
 })
 
 export default workerRouter;

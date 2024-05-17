@@ -1,6 +1,8 @@
 import {v2 as cloudinary} from 'cloudinary';
 
 
+
+
 export const cloudinaryConnect = () => {
 	try {
 		cloudinary.config({
@@ -12,4 +14,3 @@ export const cloudinaryConnect = () => {
 		console.log(error);
 	}
 };
-

@@ -21,12 +21,10 @@ const types_1 = require("./types");
 const cloudinary_1 = require("cloudinary");
 const worker_1 = require("./worker");
 const web3_js_1 = require("@solana/web3.js");
+const multer = require('multer');
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 require('dotenv').config();
-cloudinary_1.v2.config({
-    cloud_name: "dfvyupsy0",
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_SECRET
-});
 const connection = new web3_js_1.Connection('https://solana-devnet.g.alchemy.com/v2/oFWFCLUFOPgvg7Ac--JNtWABQ1jvjdUj');
 const PARENT_WALLET_ADDRESS = '6toiurfNa7x1d69qGvbYaKzbsyTfuq99vcf4bocYnreW';
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -72,7 +70,7 @@ userRouter.post('/signup', (req, res) => __awaiter(void 0, void 0, void 0, funct
         });
     }
 }));
-userRouter.post('/task', auth_1.isUser, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+userRouter.post('/task', auth_1.isUser, upload.array('options'), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e, _f;
     const userId = req.userId;
     const userData = yield prismaClient.user.findUnique({
@@ -80,25 +78,52 @@ userRouter.post('/task', auth_1.isUser, (req, res) => __awaiter(void 0, void 0, 
             id: userId
         }
     });
-    const parseData = types_1.createTaskInput.safeParse(req.body);
-    if (!parseData.success) {
-        return res.status(401).json({
-            success: false,
-            message: "Invalid Input",
-            errors: parseData.error.errors
+    if (!userData) {
+        return res.json({
+            sucess: false,
+            message: "User not found"
         });
     }
-    // const uploadPromises = parseData.data?.options.map(file => {
-    //     return cloudinary.uploader.upload(file.imageUrl, {
-    //       folder: 'tasks'
-    //     });
+    // @ts-ignore
+    // const uploadPromises = req.files.map(file => {
+    //     return cloudinary.uploader.upload_stream({ resource_type: "image" }, (error, result) => {
+    //       if (error) {
+    //         throw error;
+    //       }
+    //       return result;
+    //     }).end(file.buffer);
     // });
     // const results = await Promise.all(uploadPromises);
-    // const imageUrls = results.map(result => result.secure_url);
+    // const imageUrls = results.map((result:{secure_url:string}) => result.secure_url);
+    // console.log(imageUrls);
+    const uploadPromises = req.files.map(file => {
+        return new Promise((resolve, reject) => {
+            const uploadStream = cloudinary_1.v2.uploader.upload_stream({ resource_type: "image" }, (error, result) => {
+                if (error) {
+                    reject(error);
+                }
+                else {
+                    resolve(result);
+                }
+            });
+            uploadStream.end(file.buffer);
+        });
+    });
+    const results = yield Promise.all(uploadPromises);
+    const imageUrls = results.map((result) => result.secure_url);
+    const { title, signature } = req.body;
+    const inputData = {
+        title, signature, options: imageUrls.map((url) => ({ imageUrl: url }))
+    };
+    console.log(inputData);
+    const parseData = types_1.createTaskInput.safeParse(inputData);
+    if (!parseData.success) {
+        return res.status(411).json({ success: false, message: "Invalid input." });
+    }
     const transaction = yield connection.getTransaction(parseData.data.signature, {
         maxSupportedTransactionVersion: 1
     });
-    if (((_b = (_a = transaction === null || transaction === void 0 ? void 0 : transaction.meta) === null || _a === void 0 ? void 0 : _a.postBalances[1]) !== null && _b !== void 0 ? _b : 0) - ((_d = (_c = transaction === null || transaction === void 0 ? void 0 : transaction.meta) === null || _c === void 0 ? void 0 : _c.preBalances[1]) !== null && _d !== void 0 ? _d : 0) != 10000000) {
+    if (((_b = (_a = transaction === null || transaction === void 0 ? void 0 : transaction.meta) === null || _a === void 0 ? void 0 : _a.postBalances[1]) !== null && _b !== void 0 ? _b : 0) - ((_d = (_c = transaction === null || transaction === void 0 ? void 0 : transaction.meta) === null || _c === void 0 ? void 0 : _c.preBalances[1]) !== null && _d !== void 0 ? _d : 0) != 1000000) {
         return res.status(411).json({
             success: false,
             message: 'Transaction signature/amount incorrect'
@@ -110,7 +135,7 @@ userRouter.post('/task', auth_1.isUser, (req, res) => __awaiter(void 0, void 0, 
             message: "Paid to wrong address"
         });
     }
-    if (((_f = transaction === null || transaction === void 0 ? void 0 : transaction.transaction.message.getAccountKeys().get(0)) === null || _f === void 0 ? void 0 : _f.toString()) !== (userData === null || userData === void 0 ? void 0 : userData.id.toString())) {
+    if (((_f = transaction === null || transaction === void 0 ? void 0 : transaction.transaction.message.getAccountKeys().get(0)) === null || _f === void 0 ? void 0 : _f.toString()) !== (userData === null || userData === void 0 ? void 0 : userData.address.toString())) {
         return res.status(411).json({
             success: false,
             message: "Paid from wrong address"
@@ -126,8 +151,8 @@ userRouter.post('/task', auth_1.isUser, (req, res) => __awaiter(void 0, void 0, 
             }
         });
         yield tx.option.createMany({
-            data: parseData.data.options.map(option => ({
-                image_url: option.imageUrl,
+            data: parseData.data.options.map(_ => ({
+                image_url: _.imageUrl,
                 taskId: response.id
             }))
         });

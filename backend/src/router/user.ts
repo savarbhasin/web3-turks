@@ -7,16 +7,13 @@ import { createTaskInput } from "./types";
 import {v2 as cloudinary} from 'cloudinary';
 import { TOTAL_DECIMALS } from "./worker";
 import { Connection, PublicKey } from "@solana/web3.js";
+const multer = require('multer');
+
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
+
 
 require('dotenv').config();
-
-cloudinary.config({ 
-    cloud_name: "dfvyupsy0", 
-    api_key: process.env.CLOUDINARY_API_KEY, 
-    api_secret: process.env.CLOUDINARY_SECRET 
-});
-
-
 
 const connection = new Connection('https://solana-devnet.g.alchemy.com/v2/oFWFCLUFOPgvg7Ac--JNtWABQ1jvjdUj');
 const PARENT_WALLET_ADDRESS = '6toiurfNa7x1d69qGvbYaKzbsyTfuq99vcf4bocYnreW'
@@ -75,7 +72,7 @@ userRouter.post('/signup', async(req, res) => {
 })
 
 
-userRouter.post('/task',isUser,async (req:CustomRequest,res:Response)=>{
+userRouter.post('/task',isUser,upload.array('options'),async (req:CustomRequest,res:Response)=>{
     const userId = req.userId;
     
 
@@ -84,30 +81,56 @@ userRouter.post('/task',isUser,async (req:CustomRequest,res:Response)=>{
             id:userId
         }
     })
-   
-    const parseData = createTaskInput.safeParse(req.body);
-    console.log(parseData.data?.signature);
-    if(!parseData.success){
-        return res.status(401).json({
-            success:false,
-            message:"Invalid Input",
-            errors:parseData.error.errors
+    if(!userData){
+        return res.json({
+            sucess:false,
+            message:"User not found"
         })
     }
-
-    // const uploadPromises = parseData.data?.options.map(file => {
-    //     return cloudinary.uploader.upload(file.imageUrl, {
-    //       folder: 'tasks'
-    //     });
+   
+    
+    // @ts-ignore
+    // const uploadPromises = req.files.map(file => {
+    //     return cloudinary.uploader.upload_stream({ resource_type: "image" }, (error, result) => {
+    //       if (error) {
+    //         throw error;
+    //       }
+    //       return result;
+    //     }).end(file.buffer);
     // });
-
+    
     // const results = await Promise.all(uploadPromises);
-    // const imageUrls = results.map(result => result.secure_url);
+    // const imageUrls = results.map((result:{secure_url:string}) => result.secure_url);
+    // console.log(imageUrls);
+    const uploadPromises = req.files.map(file => {
+        return new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream({ resource_type: "image" }, (error, result) => {
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve(result);
+                }
+            });
+            uploadStream.end(file.buffer);
+        });
+    });
+    const results = await Promise.all(uploadPromises);
+    const imageUrls = results.map((result:{secure_url:string}) => result.secure_url);
+    const {title,signature} =req.body;
+    const inputData = {
+        title,signature,options:imageUrls.map((url:string)=>({imageUrl:url}))
+    };  
+    console.log(inputData);
 
+    const parseData = createTaskInput.safeParse(inputData);
+    
+    if(!parseData.success){
+        return res.status(411).json({success:false,message:"Invalid input."})
+    }
     const transaction = await connection.getTransaction(parseData.data.signature,{
         maxSupportedTransactionVersion:1
     })
-    if((transaction?.meta?.postBalances[1] ?? 0) - (transaction?.meta?.preBalances[1] ?? 0) != 10000000){
+    if((transaction?.meta?.postBalances[1] ?? 0) - (transaction?.meta?.preBalances[1] ?? 0) != 1000000){
         return res.status(411).json({
             success:false,
             message:'Transaction signature/amount incorrect'
@@ -119,7 +142,7 @@ userRouter.post('/task',isUser,async (req:CustomRequest,res:Response)=>{
             message:"Paid to wrong address"
         })
     }
-    if(transaction?.transaction.message.getAccountKeys().get(0)?.toString() !== userData?.id.toString()){
+    if(transaction?.transaction.message.getAccountKeys().get(0)?.toString() !== userData?.address.toString()){
         return res.status(411).json({
             success:false,
             message:"Paid from wrong address"
@@ -136,8 +159,8 @@ userRouter.post('/task',isUser,async (req:CustomRequest,res:Response)=>{
             }
         })
         await tx.option.createMany({
-            data:parseData.data.options.map(option=>({
-                image_url:option.imageUrl,
+            data:parseData.data.options.map(_=>({
+                image_url:_.imageUrl,
                 taskId:response.id
             }))
         })
