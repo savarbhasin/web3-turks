@@ -1,0 +1,82 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+model User{
+  id Int @id @default(autoincrement())
+  address String @unique
+  task Task[]
+
+}
+
+
+model Task{
+  id Int @id @default(autoincrement())
+  title String? @default("Select the best thumbnail")
+  options Option[]
+  userId Int
+  signature String
+  amount Int
+  done Boolean @default(false)
+  user User @relation(fields: [userId], references: [id])
+  submissions Submission[]
+}
+
+model Option{
+  id Int @id @default(autoincrement())
+  image_url String
+  taskId Int
+  task Task @relation(fields: [taskId], references: [id])
+  submissions Submission[]
+}
+
+
+model Submission{
+  id Int @id @default(autoincrement())
+  workerId Int
+  worker Worker @relation(fields: [workerId], references: [id])
+  taskId Int
+  task Task @relation(fields: [taskId], references: [id])
+  submissionDate DateTime
+  amount Int
+  option_id Int
+  option Option @relation(fields: [option_id], references: [id])
+  @@unique([workerId, taskId])
+}
+
+model Worker{
+  id Int @id @default(autoincrement())
+  address String @unique
+  submission Submission[]
+  pending_amount Int
+  locked_amount Int
+  payout Payouts[]
+}
+
+model Payouts{
+  id Int @id @default(autoincrement())
+  workerId Int 
+  amount Int
+  worker Worker @relation(fields: [workerId], references: [id])
+  signature String
+  payoutDate DateTime
+  status Status
+}
+
+enum Status{
+  Processing
+  Success 
+  Failure
+}
