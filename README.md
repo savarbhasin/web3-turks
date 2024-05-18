@@ -29,6 +29,7 @@ CrowdTask is a decentralized application (dApp) that enables users to crowdsourc
 - **Next.js 14**
 - **TailwindCSS**
 - **JavaScript**
+- **Redux**
 
 ### Backend
 - **Node.js**
