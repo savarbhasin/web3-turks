@@ -1,6 +1,6 @@
 # CrowdTask
 
-CrowdTask is a decentralized application (dApp) that enables users to crowdsource opinions and data labeling tasks. Utilizing the power of blockchain, users can create tasks, pay in SOL (Solana), and track responses, while workers can earn rewards by voting on tasks. The platform leverages modern web technologies for a seamless and secure experience.
+CrowdTask is a decentralized application (dApp) that enables users to crowdsource opinions and data labeling tasks. Utilizing the power of blockchain, users can create tasks, pay in SOL (Solana), and track responses, while workers can earn rewards by voting on tasks.
 
 ## Table of Contents
 - [Features](#features)
